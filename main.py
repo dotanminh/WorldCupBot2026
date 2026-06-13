@@ -1,4 +1,4 @@
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 import datetime
 import pytz
 import sys
@@ -30,10 +30,14 @@ def main():
     app.add_handler(CommandHandler("lichtong", handlers.lichtong))
     app.add_handler(CommandHandler("tyso", handlers.tyso))
     app.add_handler(CommandHandler("huy", handlers.stop))
+    app.add_handler(CommandHandler("tintuc", handlers.tintuc))
+    app.add_handler(CallbackQueryHandler(handlers.tintuc_callback, pattern="^news_"))
     
-    # Cài đặt vòng lặp "Đi tuần tra" (Polling) cứ 5 phút (300 giây) chạy 1 lần. 
+    # Job "Đi tuần tra" World Cup: 5 phút/lần
     job_queue = app.job_queue
     job_queue.run_repeating(tasks.poll_events, interval=300, first=10)
+    # Job tin tức VnExpress: mỗi 3600 giây (1 tiếng), bắt đầu sau 30 giây
+    job_queue.run_repeating(tasks.broadcast_news, interval=3600, first=30)
     
     # Kích hoạt tính năng WEBHOOK thay vì POLLING
     # Webhook là giải pháp tuyệt đối chính xác và hiệu quả nhất cho Server Render,

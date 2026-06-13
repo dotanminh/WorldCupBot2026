@@ -1,6 +1,7 @@
 from telegram.ext import ContextTypes
 import database as db
 import football_api as api
+import news_api as news
 import datetime
 import pytz
 import asyncio
@@ -117,3 +118,49 @@ async def poll_events(context: ContextTypes.DEFAULT_TYPE):
                     
         except Exception as e:
             print(f"Lỗi khi quét sự kiện event_id: {e}")
+
+async def broadcast_news(context: ContextTypes.DEFAULT_TYPE):
+    """Chạy mỗi giờ: Lấy tin VnExpress mới nhất và gửi cho toàn bộ subscriber."""
+    try:
+        # Lấy top 5 bài mới nhất từ VnExpress
+        articles = news.get_latest_news(limit=5)
+        if not articles:
+            print("[News] Không lấy được tin tức từ VnExpress.")
+            return
+
+        # Lọc ra các bài chưa gửi
+        new_articles = [a for a in articles if not db.is_article_sent(a["link"])]
+        if not new_articles:
+            print("[News] Không có bài viết mới (tất cả đã gửi rồi).")
+            return
+
+        # Định dạng tin nhắn
+        msg = news.format_articles_message(new_articles)
+
+        # Gửi cho tất cả subscriber
+        users = db.get_all_subscribers()
+        sent_count = 0
+        for user_id in users:
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=msg,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=False
+                )
+                await asyncio.sleep(0.05)
+                sent_count += 1
+            except Exception as e:
+                print(f"[News] Lỗi gửi tin cho {user_id}: {e}")
+
+        # Đánh dấu đã gửi
+        for article in new_articles:
+            db.mark_article_sent(article["link"])
+
+        # Dọn dẹp bài tin cũ (> 48h)
+        db.cleanup_old_articles(hours=48)
+
+        print(f"[News] Da gui {len(new_articles)} bai moi den {sent_count} nguoi dung.")
+
+    except Exception as e:
+        print(f"[News] Loi broadcast_news: {e}")

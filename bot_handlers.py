@@ -1,7 +1,8 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import database as db
 import football_api as api
+import news_api as news
 
 async def send_long_message(update: Update, text: str):
     """Gửi tin nhắn dài qua Telegram bằng cách cắt chuỗi an toàn (max 4000 ký tự)."""
@@ -168,3 +169,49 @@ async def bang_xep_hang(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = msg[:4000] + "\n... (Còn nữa)"
         
     await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='Markdown')
+
+async def tintuc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý lệnh /tintuc - Xem tin tức VnExpress theo chuyên mục."""
+    chat_id = update.effective_chat.id
+    username = update.effective_chat.username or update.effective_chat.first_name
+    db.add_subscriber(chat_id, username)
+
+    # Tạo inline keyboard chọn chuyên mục
+    categories = news.get_all_categories()
+    keyboard = []
+    row = []
+    for i, cat in enumerate(categories):
+        row.append(InlineKeyboardButton(cat, callback_data=f"news_{cat}"))
+        if len(row) == 2:  # 2 nút mỗi hàng
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    # Thêm nút xem tất cả
+    keyboard.append([InlineKeyboardButton("📰 Tất cả tin mới nhất", callback_data="news_Tin mới nhất")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "📰 *Chọn chuyên mục tin tức VnExpress:*",
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def tintuc_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xử lý khi người dùng bấm chọn chuyên mục tin tức."""
+    query = update.callback_query
+    await query.answer()
+
+    category = query.data.replace("news_", "")
+    await query.edit_message_text(f"🔄 Đang tải tin *{category}*...", parse_mode='Markdown')
+
+    articles = news.get_news_by_category(category)
+    msg = news.format_articles_message(articles, header=f"TIN TỨC - {category.upper()}")
+
+    # Telegram giới hạn tin nhắn edit_message_text nên gửi tin mới
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=msg,
+        parse_mode='Markdown',
+        disable_web_page_preview=False
+    )
